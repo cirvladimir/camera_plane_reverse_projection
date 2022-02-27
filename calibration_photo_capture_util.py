@@ -2,6 +2,7 @@
 
 import argparse
 import math
+from cv2 import undistort
 import numpy as np
 import cv2
 from cv2 import aruco
@@ -9,6 +10,7 @@ import glob
 import time
 import threading
 import os
+import reverse_projection
 
 parser = argparse.ArgumentParser(
     description='Capture camera calibration photos. All coordinates here are in millimeters.'
@@ -23,6 +25,10 @@ parser.add_argument(
 parser.add_argument("--skip_extrinsic_calibration",
                     action='store_true',
                     help="Skip calibrating camera position and only calibrate intrinsic parameters.")
+
+parser.add_argument("--test_only",
+                    action='store_true',
+                    help="Test an existing calibration file.")
 
 parser.add_argument(
     "--intrinsic_params_file",
@@ -64,22 +70,22 @@ parser.add_argument("--camera_position_photo",
                     help="Optional. Photo of aruco markers for positioning camera. If unspecified, script will prompt you to take a photo with a camera.")
 
 parser.add_argument("--x1",
-                    default=75.4,
+                    default=185.0,
                     type=float,
                     help="X-coordinate of point 1 on aruco calibration image. Only needed if you're using camera_position_photo.")
 
 parser.add_argument("--y1",
-                    default=254.0,
+                    default=12.0,
                     type=float,
                     help="Y-coordinate of point 1 on aruco calibration image. Only needed if you're using camera_position_photo.")
 
 parser.add_argument("--x2",
-                    default=75.4,
+                    default=182.5,
                     type=float,
                     help="X-coordinate of point 2 on aruco calibration image. Only needed if you're using camera_position_photo.")
 
 parser.add_argument("--y2",
-                    default=477.5,
+                    default=235.5,
                     type=float,
                     help="Y-coordinate of point 2 on aruco calibration image. Only needed if you're using camera_position_photo.")
 
@@ -96,29 +102,37 @@ parser.add_argument("--start_delay",
 args = parser.parse_args()
 
 # Minimal check for argument validity.
-if not args.skip_extrinsic_calibration:
-  if args.all_params_file is None:
-    print(
-        "You must specify --all_params_file=<path to new file> for storing"
-        " parameters."
-    )
-    exit(0)
+if not args.test_only:
+  if not args.skip_extrinsic_calibration:
+    if args.all_params_file is None:
+      print(
+          "You must specify --all_params_file=<path to new file> for storing"
+          " parameters."
+      )
+      exit(0)
 
-  if args.skip_intrinsic_calibration:
-    # Check that some params file exists
+    if args.skip_intrinsic_calibration:
+      # Check that some params file exists
+      if args.intrinsic_params_file is not None:
+        if not os.path.exists(args.intrinsic_params_file):
+          print(
+              "If you're skipping intrinsic calibration, intrinsic_params_file should exist.")
+          exit(0)
+      else:
+        if not os.path.exists(args.all_params_file):
+          print("If you're skipping intrinsic calibration, all_params_file should exist, or specify intrinsic_params_file.")
+          exit(0)
+
+  if args.skip_extrinsic_calibration and not args.skip_intrinsic_calibration:
     if args.intrinsic_params_file is not None:
-      if not os.path.exists(args.intrinsic_params_file):
-        print(
-            "If you're skipping intrinsic calibration, intrinsic_params_file should exist.")
-        exit(0)
-    else:
-      if not os.path.exists(args.all_params_file):
-        print("If you're skipping intrinsic calibration, all_params_file should exist, or specify intrinsic_params_file.")
-        exit(0)
-
-if args.skip_extrinsic_calibration and not args.skip_intrinsic_calibration:
-  if args.intrinsic_params_file is not None:
-    print("You need to specify intrinsic_params_file if you're skipping extrinsic calibration.")
+      print("You need to specify intrinsic_params_file if you're skipping extrinsic calibration.")
+      exit(0)
+else:
+  if args.all_params_file is None:
+    print("You're using the test_only flag. You must specify the file to test in all_params_file.")
+    exit(0)
+  if not os.path.exists(args.all_params_file):
+    print("Specified all_params_file does not exist.")
     exit(0)
 
 vid = cv2.VideoCapture(args.video_capture_device_index)
@@ -131,6 +145,7 @@ _, last_frame = vid.read()
 new_frame = last_frame
 stop_camera = False
 show_camera = False
+preview_display_image = None
 
 
 def new_frame_updater():
@@ -145,10 +160,16 @@ def new_frame_updater():
         if not preview_window_created:
           cv2.namedWindow("live_preview")
           preview_window_created = True
-        cv2.imshow("live_preview", new_frame)
+
+        if preview_display_image is not None:
+          cv2.imshow("live_preview", preview_display_image)
+        else:
+          cv2.imshow("live_preview", new_frame)
         cv2.waitKey(1)
 
     if stop_camera:
+      if preview_window_created:
+        cv2.destroyWindow("live_preview")
       vid.release()
       break
 
@@ -251,6 +272,29 @@ def calibrate_intrinsic():
   return (camera_matrix, distortion)
 
 
+def draw_test_pattern(frame):
+  reverse_projector = reverse_projection.ReverseProjector(args.all_params_file)
+  frame = reverse_projector.undistort(frame)
+
+  num_columns = 100
+  num_rows = 100
+  for i in range(0, num_columns):
+    for j in range(0, num_rows):
+      u = 50 + ((frame.shape[1] - 100) // (num_columns - 1)) * i
+      v = 50 + ((frame.shape[0] - 100) // (num_rows - 1)) * j
+
+      if (i % 10) == 0 and (j % 10) == 0:
+        [x, y] = reverse_projector.find_x_y(u, v, 0)
+
+        frame = cv2.putText(frame, f"({int(x)}, {int(y)})", (u - 50, v + 20),
+                            cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 255), 1, cv2.LINE_AA)
+
+        frame = cv2.circle(frame, (u, v), 3, (0, 0, 255), 1, cv2.LINE_AA)
+      else:
+        frame = cv2.circle(frame, (u, v), 1, (0, 0, 255), 1, cv2.LINE_AA)
+  return frame
+
+
 def extrinsic_calibration(camera_matrix, distortion):
   print("Place the aruco calibraiton board flat on the plane you want to later measure.")
 
@@ -322,6 +366,7 @@ def extrinsic_calibration(camera_matrix, distortion):
       global show_camera
       show_camera = False
       aruco_image = new_frame
+      cv2.imwrite("a.png", aruco_image)
       is_good = input("Does the image look good? [Y/n]: ")
       if is_good.lower() == 'y' or is_good.lower() == '':
         image_ok = True
@@ -342,26 +387,42 @@ def extrinsic_calibration(camera_matrix, distortion):
   np.savez(args.all_params_file, camera_matrix=camera_matrix,
            distortion=distortion, camera_rotation=camera_rotation, camera_translation=camera_translation)
 
-  print("Calibration comlete, parameters written to file.")
+  show_camera = True
+  global preview_display_image
+  preview_display_image = draw_test_pattern(aruco_image)
+  input("Calibration comlete, parameters written to file. Press enter to exit.")
 
 
-if not args.skip_intrinsic_calibration:
-  (camera_matrix, distortion) = calibrate_intrinsic()
-elif not args.skip_extrinsic_calibration:
-  if args.intrinsic_params_file is not None and os.path.exists(args.intrinsic_params_file):
-    npzfile = np.load(args.intrinsic_params_file)
-    (camera_matrix, distortion) = (
-        npzfile['camera_matrix'], npzfile['distortion'])
-  elif args.all_params_file is not None and os.path.exists(args.all_params_file):
-    npzfile = np.load(args.all_params_file)
-    (camera_matrix, distortion) = (
-        npzfile['camera_matrix'], npzfile['distortion'])
-  else:
-    print("intrinsic_params_file or all_params_file must exist if you're skipping intrinsic calibration.")
-    exit(0)
+def test_calibration():
+  global show_camera, preview_display_image
+  show_camera = True
+  countdown(2)
+  frame = new_frame
 
-if not args.skip_extrinsic_calibration:
-  extrinsic_calibration(camera_matrix, distortion)
+  preview_display_image = draw_test_pattern(frame)
+  input("Press enter to exit.")
+
+
+if not args.test_only:
+  if not args.skip_intrinsic_calibration:
+    (camera_matrix, distortion) = calibrate_intrinsic()
+  elif not args.skip_extrinsic_calibration:
+    if args.intrinsic_params_file is not None and os.path.exists(args.intrinsic_params_file):
+      npzfile = np.load(args.intrinsic_params_file)
+      (camera_matrix, distortion) = (
+          npzfile['camera_matrix'], npzfile['distortion'])
+    elif args.all_params_file is not None and os.path.exists(args.all_params_file):
+      npzfile = np.load(args.all_params_file)
+      (camera_matrix, distortion) = (
+          npzfile['camera_matrix'], npzfile['distortion'])
+    else:
+      print("intrinsic_params_file or all_params_file must exist if you're skipping intrinsic calibration.")
+      exit(0)
+
+  if not args.skip_extrinsic_calibration:
+    extrinsic_calibration(camera_matrix, distortion)
+else:
+  test_calibration()
 
 stop_camera = True
 camera_thread.join()
