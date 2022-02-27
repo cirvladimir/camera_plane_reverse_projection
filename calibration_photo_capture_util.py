@@ -320,8 +320,8 @@ def extrinsic_calibration(camera_matrix, distortion):
          [242, 0, 0]],
     ], np.float32)
 
-    known_point_1 = np.array([[32 - 20], [200 - 15], [0]], np.float32)
-    known_point_2 = np.array([[255.5 - 20], [197.5 - 15], [0]], np.float32)
+    known_point_1 = np.array([[200 - 15], [32 - 20], [0]], np.float32)
+    known_point_2 = np.array([[197.5 - 15], [255.5 - 20], [0]], np.float32)
 
     z_rotation = (math.atan2(point_2[1] - point_1[1], point_2[0] - point_1[0]) -
                   math.atan2(known_point_2[1][0] - known_point_1[1][0], known_point_2[0][0] - known_point_1[0][0]))

@@ -38,4 +38,6 @@ class ReverseProjector():
     s = (z + rsm[2, 0]) / lsm[2, 0]
     p = np.dot(self.inv_rotation_matrix, s *
                np.dot(self.inv_camera_matrix, uv) - self.camera_translation)
-    return np.array([p[0], p[1]])
+
+    # TODO: Fix this hack! Should be 0, 1 bellow:
+    return np.array([p[1], p[0]])
