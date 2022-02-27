@@ -8,8 +8,24 @@ import glob
 import time
 import threading
 
-parser = argparse.ArgumentParser(
+
+parser =    argparse.ArgumentParser(
     description='Capture camera calibration photos. All coordinates here are in millimeters.')
+
+parser.add_argument("--skip_intrinsic_calibration", action='store_true',
+                    help="Do not calibrate focal lengths/distortions. Load ones from a file instead. You should do this if you've calibrated the same camera before and are just repositioning it, without changing the focus or zoom.")
+
+parser.add_argument("--calibrate_extrinsic", action='store_true',
+                    help="Calibrate camera position. Default to true. Do this if you reposition the camera.")
+
+parser.add_argument("--no-calibrate_extrinsic", action='store_false',
+                    help="Skip calibrating extrinsic parametrs.")
+
+parser.add_argument("--intrinsic_params_file",
+                    help="Where to write/read intrinsic camera parameters. Write/read based on calibrate_intrinsic flag. Optional if you specify all_params_file.")
+
+parser.add_argument("--all_params_file",
+                    help="Where to write extrinsic + intrinsic camera parameters. Only created with calibrate_extrinsic.")
 
 parser.add_argument("--video_capture_device_index", default=0, type=int,
                     help="Index of camera. Usually 0 for default opencv setups. Corresponds to cv2.VideoCapture(index).")
@@ -43,6 +59,10 @@ parser.add_argument("--start_delay", default=0, type=float,
                     help="Number of seconds to wait at the start.")
 
 args = parser.parse_args()
+
+# Minimal check for argument validity.
+if args.calibrate_extrinsic
+
 
 vid = cv2.VideoCapture(args.video_capture_device_index)
 
@@ -123,8 +143,6 @@ def process_frame(img):
 
 
 num_calibration_images_processed = 0
-
-time.sleep(args.start_delay)
 
 print("Press any key to start.")
 cv2.imshow("image", last_frame)
