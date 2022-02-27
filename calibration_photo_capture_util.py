@@ -135,26 +135,23 @@ show_camera = False
 
 def new_frame_updater():
   global new_frame, stop_camera
+  preview_window_created = False
   while True:
     _, frame = vid.read()
     if frame is not None:
       new_frame = frame
 
       if show_camera:
-        print('a1')
-        cv2.imshow("image", new_frame)
-        print('a')
+        if not preview_window_created:
+          cv2.namedWindow("live_preview")
+          preview_window_created = True
+        cv2.imshow("live_preview", new_frame)
         cv2.waitKey(1)
-        print('b')
 
     if stop_camera:
       vid.release()
       break
 
-
-print("Press any key to start.")
-cv2.imshow("image", last_frame)
-cv2.waitKey(0)
 
 show_camera = True
 
@@ -167,9 +164,6 @@ def countdown(n):
   for i in range(n):
     print(n - i)
     time.sleep(1)
-
-
-countdown(20)
 
 
 def calibrate_intrinsic():
@@ -285,10 +279,11 @@ def extrinsic_calibration(camera_matrix, distortion):
     known_point_1 = np.array([[32 - 20], [200 - 15], [0]], np.float32)
     known_point_2 = np.array([[255.5 - 20], [197.5 - 15], [0]], np.float32)
 
-    z_rotation = (math.atan2(point_2[1][0] - point_1[1][0], point_2[0][0] - point_1[0][0]) -
+    z_rotation = (math.atan2(point_2[1] - point_1[1], point_2[0] - point_1[0]) -
                   math.atan2(known_point_2[1][0] - known_point_1[1][0], known_point_2[0][0] - known_point_1[0][0]))
     rotation_matrix = make_rotation_matrix(z_rotation)
-    translation = point_1 - rotation_matrix @ known_point_1
+    translation = np.array([[point_1[0]], [point_1[1]], [0]]) - \
+        rotation_matrix @ known_point_1
     return np.array([
         [(translation + rotation_matrix @ pt.reshape((3, 1))).reshape((3,))
          for pt in rect]
@@ -327,11 +322,11 @@ def extrinsic_calibration(camera_matrix, distortion):
       global show_camera
       show_camera = False
       aruco_image = new_frame
-      cv2.imshow("image", aruco_image)
-      cv2.waitKey(1)
       is_good = input("Does the image look good? [Y/n]: ")
       if is_good.lower() == 'y' or is_good.lower() == '':
         image_ok = True
+      else:
+        show_camera = True
 
     def read_param(name, default):
       val = input(f"{name} [{default}]:").strip()
