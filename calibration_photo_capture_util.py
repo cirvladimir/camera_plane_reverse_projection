@@ -41,7 +41,7 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--video_capture_device_index",
+    "--camera_index",
     default=0,
     type=int,
     help="Index of camera. Usually 0 for default opencv setups. Corresponds to cv2.VideoCapture(index)."
@@ -61,7 +61,7 @@ parser.add_argument(
 
 parser.add_argument(
     "--calibration_sharpness_threshold",
-    default=1500,
+    default=50,
     type=int,
     help="Discard images which are less sharp than this value. Higher number discards more images, 0 turns feature off."
 )
@@ -99,6 +99,10 @@ parser.add_argument("--start_delay",
                     type=float,
                     help="Number of seconds to wait at the start.")
 
+parser.add_argument("--debug",
+                    action='store_true',
+                    help="Print extra debug info.")
+
 args = parser.parse_args()
 
 # Minimal check for argument validity.
@@ -124,7 +128,7 @@ if not args.test_only:
           exit(0)
 
   if args.skip_extrinsic_calibration and not args.skip_intrinsic_calibration:
-    if args.intrinsic_params_file is not None:
+    if args.intrinsic_params_file is None:
       print("You need to specify intrinsic_params_file if you're skipping extrinsic calibration.")
       exit(0)
 else:
@@ -135,50 +139,47 @@ else:
     print("Specified all_params_file does not exist.")
     exit(0)
 
-vid = cv2.VideoCapture(args.video_capture_device_index)
+if args.camera_position_photo is None:
+  vid = cv2.VideoCapture(args.camera_index)
 
-vid.set(3, 1600)
-vid.set(4, 1200)
+  vid.set(3, 3264)
 
-_, last_frame = vid.read()
+  _, last_frame = vid.read()
 
-new_frame = last_frame
-stop_camera = False
-show_camera = False
-preview_display_image = None
+  new_frame = last_frame
+  stop_camera = False
+  show_camera = False
+  preview_display_image = None
 
+  def new_frame_updater():
+    global new_frame, stop_camera
+    preview_window_created = False
+    while True:
+      _, frame = vid.read()
+      if frame is not None:
+        new_frame = frame
 
-def new_frame_updater():
-  global new_frame, stop_camera
-  preview_window_created = False
-  while True:
-    _, frame = vid.read()
-    if frame is not None:
-      new_frame = frame
+        if show_camera:
+          if not preview_window_created:
+            cv2.namedWindow("live_preview", cv2.WINDOW_NORMAL)
+            preview_window_created = True
 
-      if show_camera:
-        if not preview_window_created:
-          cv2.namedWindow("live_preview")
-          preview_window_created = True
+          if preview_display_image is not None:
+            cv2.imshow("live_preview", preview_display_image)
+          else:
+            cv2.imshow("live_preview", new_frame)
+          cv2.waitKey(1)
 
-        if preview_display_image is not None:
-          cv2.imshow("live_preview", preview_display_image)
-        else:
-          cv2.imshow("live_preview", new_frame)
-        cv2.waitKey(1)
+      if stop_camera:
+        if preview_window_created:
+          cv2.destroyWindow("live_preview")
+        vid.release()
+        break
 
-    if stop_camera:
-      if preview_window_created:
-        cv2.destroyWindow("live_preview")
-      vid.release()
-      break
+  show_camera = True
 
-
-show_camera = True
-
-
-camera_thread = threading.Thread(target=new_frame_updater)
-camera_thread.start()
+  camera_thread = threading.Thread(target=new_frame_updater)
+  camera_thread.start()
 
 
 def countdown(n):
@@ -278,8 +279,8 @@ def draw_test_pattern(frame):
 
   num_columns = 100
   num_rows = 100
-  for i in range(0, num_columns):
-    for j in range(0, num_rows):
+  for i in range(0, num_columns + 1):
+    for j in range(0, num_rows + 1):
       u = 50 + ((frame.shape[1] - 100) // (num_columns - 1)) * i
       v = 50 + ((frame.shape[0] - 100) // (num_rows - 1)) * j
 
@@ -296,8 +297,6 @@ def draw_test_pattern(frame):
 
 
 def extrinsic_calibration(camera_matrix, distortion):
-  print("Place the aruco calibraiton board flat on the plane you want to later measure.")
-
   def make_rotation_matrix(angle):
     c = math.cos(angle)
     s = math.sin(angle)
@@ -309,19 +308,19 @@ def extrinsic_calibration(camera_matrix, distortion):
     default_corners = np.array([
         # Marker 0:
         [[0, 0, 0],
-         [0, 100, 0],
-         [100, 100, 0],
-         [100, 0, 0]],
+         [100, 0, 0],
+         [100, -100, 0],
+         [0, -100, 0]],
 
         # Marker 1:
-        [[142, 0, 0],
-         [142, 100, 0],
-         [242, 100, 0],
-         [242, 0, 0]],
+        [[0, -142, 0],
+         [100, -142, 0],
+         [100, -242, 0],
+         [0, -242, 0]],
     ], np.float32)
 
-    known_point_1 = np.array([[200 - 15], [32 - 20], [0]], np.float32)
-    known_point_2 = np.array([[197.5 - 15], [255.5 - 20], [0]], np.float32)
+    known_point_1 = np.array([[200 - 15], [-(32 - 20)], [0]], np.float32)
+    known_point_2 = np.array([[197.5 - 15], [-(255.5 - 20)], [0]], np.float32)
 
     z_rotation = (math.atan2(point_2[1] - point_1[1], point_2[0] - point_1[0]) -
                   math.atan2(known_point_2[1][0] - known_point_1[1][0], known_point_2[0][0] - known_point_1[0][0]))
@@ -343,13 +342,31 @@ def extrinsic_calibration(camera_matrix, distortion):
         image, arucoDict, parameters=arucoParams)
 
     board_corners = get_aruco_corners(point_1, point_2)
-    # print(board_corners)
+
     aruco_dict = aruco.Dictionary_get(aruco.DICT_5X5_50)
     board = aruco.Board_create(
         board_corners, aruco_dict, np.array([0, 1]))
 
     (_, rvec, tvec) = aruco.estimatePoseBoard(
         corners, ids, board, camera_matrix, distortion, None, None)
+
+    if args.debug:
+      print("image corners:")
+      print(corners)
+      print("world corners:")
+      print(board_corners)
+      print("Rotation: ")
+      print(rvec)
+      print("Translation: ")
+      print(tvec)
+
+      print("Checking")
+
+      reverse_projector = reverse_projection.ReverseProjector(
+          args.all_params_file)
+      for rect_ar in corners:
+        for (u, v) in rect_ar[0]:
+          print(reverse_projector.find_x_y(u, v, 0))
 
     return (rvec, tvec)
 
@@ -360,6 +377,7 @@ def extrinsic_calibration(camera_matrix, distortion):
 
     aruco_image = cv2.imread(args.camera_position_photo)
   else:
+    print("Place the aruco calibraiton board flat on the plane you want to later measure.")
     image_ok = False
     while not image_ok:
       countdown(5)
@@ -400,10 +418,23 @@ def test_calibration():
   frame = new_frame
 
   preview_display_image = draw_test_pattern(frame)
-  input("Press enter to exit.")
+
+  reverse_projector = reverse_projection.ReverseProjector(args.all_params_file)
+
+  while True:
+    x_str = input("X: ")
+    if x_str == "":
+      break
+    x = float(x_str)
+    y = float(input("Y: "))
+    print(reverse_projector.find_x_y(x, y, 0))
+
+  # input("Press enter to exit.")
 
 
-if not args.test_only:
+if args.test_only:
+  test_calibration()
+else:
   if not args.skip_intrinsic_calibration:
     (camera_matrix, distortion) = calibrate_intrinsic()
   elif not args.skip_extrinsic_calibration:
@@ -421,8 +452,6 @@ if not args.test_only:
 
   if not args.skip_extrinsic_calibration:
     extrinsic_calibration(camera_matrix, distortion)
-else:
-  test_calibration()
 
 stop_camera = True
 camera_thread.join()
