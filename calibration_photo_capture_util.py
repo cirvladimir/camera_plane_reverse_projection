@@ -26,9 +26,22 @@ parser.add_argument("--skip_extrinsic_calibration",
                     action='store_true',
                     help="Skip calibrating camera position and only calibrate intrinsic parameters.")
 
+parser.add_argument("--capture_photo",
+                    help="Capture photo to this file path.")
+
 parser.add_argument("--test_only",
                     action='store_true',
                     help="Test an existing calibration file.")
+
+parser.add_argument("--change_resolution",
+                    action='store_true',
+                    help="Change resolution of existing file: --change_resolution --original_intrinsic_params= --intrinsic_params_file= --original_width= --new_width=")
+
+parser.add_argument("--original_intrinsic_params")
+
+parser.add_argument("--original_width", type=int)
+
+parser.add_argument("--new_width", type=int)
 
 parser.add_argument(
     "--intrinsic_params_file",
@@ -106,7 +119,9 @@ parser.add_argument("--debug",
 args = parser.parse_args()
 
 # Minimal check for argument validity.
-if not args.test_only:
+if args.change_resolution or (args.capture_photo is not None):
+  pass
+elif not args.test_only:
   if not args.skip_extrinsic_calibration:
     if args.all_params_file is None:
       print(
@@ -432,7 +447,24 @@ def test_calibration():
   # input("Press enter to exit.")
 
 
-if args.test_only:
+if args.capture_photo is not None:
+  photo = last_frame
+  if args.all_params_file is not None or args.intrinsic_params_file is not None:
+    npzfile = np.load(
+        args.intrinsic_params_file if args.intrinsic_params_file is not None else args.all_params_file)
+    (camera_matrix, distortion) = (
+        npzfile['camera_matrix'], npzfile['distortion'])
+    photo = cv2.undistort(photo, camera_matrix, distortion)
+  cv2.imwrite(args.capture_photo, photo)
+elif args.change_resolution:
+  npzfile = np.load(args.original_intrinsic_params)
+  (camera_matrix, distortion) = (
+      npzfile['camera_matrix'], npzfile['distortion'])
+  camera_matrix = camera_matrix * args.new_width / args.original_width
+  camera_matrix[2, 2] = 1.0
+  np.savez(args.intrinsic_params_file,
+           camera_matrix=camera_matrix, distortion=distortion)
+elif args.test_only:
   test_calibration()
 else:
   if not args.skip_intrinsic_calibration:
