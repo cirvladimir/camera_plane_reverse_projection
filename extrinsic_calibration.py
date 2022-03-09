@@ -47,12 +47,11 @@ def get_aruco_corners(point_1, point_2):
 
 def find_camera_transform_aruco(camera_matrix, distortion, image,
                                 point_1, point_2, debug=False):
-  image = cv2.undistort(image, camera_matrix, distortion)
-
+  # image = cv2.undistort(image, camera_matrix, distortion) I think this should be commented, i might be wrong.
   arucoDict = aruco.Dictionary_get(aruco.DICT_5X5_50)
   arucoParams = aruco.DetectorParameters_create()
   (corners, ids, _) = aruco.detectMarkers(
-      image, arucoDict, parameters=arucoParams)
+      image, arucoDict, parameters=arucoParams, cameraMatrix=camera_matrix, distCoeff=distortion)
 
   board_corners = get_aruco_corners(point_1, point_2)
 
@@ -62,6 +61,22 @@ def find_camera_transform_aruco(camera_matrix, distortion, image,
 
   (_, rvec, tvec) = aruco.estimatePoseBoard(
       corners, ids, board, camera_matrix, distortion, None, None)
+
+  reprojected_points, _ = cv2.projectPoints(
+      np.reshape(board_corners, (len(board_corners) * 4, 3, 1)), rvec, tvec, camera_matrix, distortion)
+
+  reprojected_points = np.reshape(
+      reprojected_points, (len(board_corners) * 4, 2))
+
+  reshaped_corners = np.reshape(
+      [corners[ids[0][0]], corners[ids[1][0]]], (len(board_corners) * 4, 2))
+
+  difs = np.linalg.norm(reprojected_points - reshaped_corners, axis=1)
+  pixel_size = np.linalg.norm(
+      board_corners[0][0] - board_corners[0][1]) / np.linalg.norm(reshaped_corners[1] - reshaped_corners[0])
+
+  print(
+      f"Average error: {np.mean(difs) * pixel_size}, Max error: {np.max(difs) * pixel_size}")
 
   if debug:
     print("image corners:")
