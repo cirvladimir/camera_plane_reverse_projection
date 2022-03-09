@@ -26,9 +26,16 @@ class ReverseProjector():
   def undistort(self, image):
     return cv2.undistort(image, self.camera_matrix, self.distortion)
 
-  def find_x_y_no_distortion(self, u, v, z):
-    """Efficient version of find_x_y if the distortion of the camera is zero. Will give
-    the wrong result if the distortion is not zero.
+  def find_x_y_undistorted(self, u, v, z):
+    """Finds world X,Y coordinates given world Z and picture u,v coordinates of the undistorted image.
+
+    Arguments:
+    u -- x coordinate of the pixel on the un-distorted image.
+    v -- y coordinate of hte pixel on the un-distorted image.
+    z -- world z coordinate. +z is closer to the camera
+
+    Returns:
+    (x, y) in world coordinates.
     """
     uv = np.array([[u], [v], [1]])
     x_cam = self.inv_camera_matrix @ uv
@@ -41,12 +48,12 @@ class ReverseProjector():
                                           self.camera_translation)
     return [x_world[0][0], x_world[1][0]]
 
-  def find_x_y(self, u, v, z):
-    """Finds world X,Y coordinates given world Z and picture u,v coordinates.
+  def find_x_y_distorted(self, u, v, z):
+    """Finds world X,Y coordinates given world Z and picture u,v coordinates of the original image.
 
     Arguments:
-    u -- x coordinate of the pixel on the un-distorted image.
-    v -- y coordinate of hte pixel on the un-distorted image.
+    u -- x coordinate of the pixel on the distorted image.
+    v -- y coordinate of hte pixel on the distorted image.
     z -- world z coordinate. +z is closer to the camera
 
     Returns:
@@ -61,4 +68,4 @@ class ReverseProjector():
 
     undistorted_point = self.camera_matrix @ undistorted_normalized_point
 
-    return self.find_x_y_no_distortion(undistorted_point[0][0], undistorted_point[1][0], z)
+    return self.find_x_y_undistorted(undistorted_point[0][0], undistorted_point[1][0], z)

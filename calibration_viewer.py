@@ -47,5 +47,5 @@ def test_calibration(args, camera: Camera):
       break
     x = float(x_str)
     y = float(input("Y: "))
-    print(reverse_projector.find_x_y(x, y, 0))
+    print(reverse_projector.find_x_y_distorted(x, y, 0))
   cv2.destroyAllWindows()
