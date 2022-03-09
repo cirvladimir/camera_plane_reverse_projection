@@ -52,35 +52,13 @@ class ReverseProjector():
     Returns:
     (x, y) in world coordinates.
     """
-    initial_guess = np.array(self.find_x_y_no_distortion(u, v, z))
+    undistorted_normalized_point = cv2.undistortPoints(
+        np.array([[u, v]], dtype=np.float32), self.camera_matrix, self.distortion)[0]
 
-    desired = np.array([u, v])
+    # Convert [[x, y]] into [[x], [y], [1]]:
+    undistorted_normalized_point = np.concatenate(
+        [undistorted_normalized_point.reshape((2, 1)), np.array([[1]])])
 
-    def get_actual(guess):
-      imgage_points, _ = cv2.projectPoints(np.array([[[guess[0]], [guess[1]], [z]]]), self.camera_rotation, self.camera_translation, self.camera_matrix,
-                                           self.distortion)
-      return imgage_points[0][0]
+    undistorted_point = self.camera_matrix @ undistorted_normalized_point
 
-    def get_error(guess):
-      actual = get_actual(guess)
-      return np.linalg.norm(actual - desired)
-
-    best_guess = initial_guess
-    best_error = get_error(initial_guess)
-    travel_rad = 2
-    for i in range(20):
-      NUM_ANGLES = 8
-      guess_improved = False
-      for angle_i in range(NUM_ANGLES):
-        angle = math.pi * 2 / NUM_ANGLES * angle_i
-        new_guess = best_guess + \
-            np.array([math.cos(angle), math.sin(angle)]) * travel_rad
-        new_error = get_error(new_guess)
-        if new_error < best_error:
-          guess_improved = True
-          best_error = new_error
-          best_guess = new_guess
-      if not guess_improved:
-        travel_rad /= 2
-
-    return best_guess
+    return self.find_x_y_no_distortion(undistorted_point[0][0], undistorted_point[1][0], z)

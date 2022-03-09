@@ -47,7 +47,8 @@ def get_aruco_corners(point_1, point_2):
 
 def find_camera_transform_aruco(camera_matrix, distortion, image,
                                 point_1, point_2, debug=False):
-  # image = cv2.undistort(image, camera_matrix, distortion) I think this should be commented, i might be wrong.
+  # image = cv2.undistort(image, camera_matrix, distortion)
+  # distortion = np.zeros((5))
   arucoDict = aruco.Dictionary_get(aruco.DICT_5X5_50)
   arucoParams = aruco.DetectorParameters_create()
   (corners, ids, _) = aruco.detectMarkers(
@@ -95,6 +96,7 @@ def find_camera_transform_aruco(camera_matrix, distortion, image,
     #     corners[1][0][0][0], corners[1][0][0][1], 0))
     for rect_ar in corners:
       for (u, v) in rect_ar[0]:
+        # print(reverse_projector.find_x_y_no_distortion(u, v, 0))
         print(reverse_projector.find_x_y(u, v, 0))
 
   return (rvec, tvec)
